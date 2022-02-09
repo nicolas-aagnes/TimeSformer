@@ -74,15 +74,25 @@ def train_epoch(
         train_meter.data_toc()
 
         # Explicitly declare reduction to mean.
+        # MIXUP is not enabled by default.
         if not cfg.MIXUP.ENABLED:
-           loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
+            loss_fun = losses.get_loss_func(
+                cfg.MODEL.LOSS_FUNC, cfg.MODEL.get("HOMOGRAPHY_MATRICES_LOCATION", None)
+            )
         else:
-           mixup_fn = Mixup(
-               mixup_alpha=cfg.MIXUP.ALPHA, cutmix_alpha=cfg.MIXUP.CUTMIX_ALPHA, cutmix_minmax=cfg.MIXUP.CUTMIX_MINMAX, prob=cfg.MIXUP.PROB, switch_prob=cfg.MIXUP.SWITCH_PROB, mode=cfg.MIXUP.MODE,
-               label_smoothing=0.1, num_classes=cfg.MODEL.NUM_CLASSES)
-           hard_labels = labels
-           inputs, labels = mixup_fn(inputs, labels)
-           loss_fun = SoftTargetCrossEntropy()
+            mixup_fn = Mixup(
+                mixup_alpha=cfg.MIXUP.ALPHA,
+                cutmix_alpha=cfg.MIXUP.CUTMIX_ALPHA,
+                cutmix_minmax=cfg.MIXUP.CUTMIX_MINMAX,
+                prob=cfg.MIXUP.PROB,
+                switch_prob=cfg.MIXUP.SWITCH_PROB,
+                mode=cfg.MIXUP.MODE,
+                label_smoothing=0.1,
+                num_classes=cfg.MODEL.NUM_CLASSES,
+            )
+            hard_labels = labels
+            inputs, labels = mixup_fn(inputs, labels)
+            loss_fun = SoftTargetCrossEntropy()
 
         if cfg.DETECTION.ENABLE:
             preds = model(inputs, meta["boxes"])
@@ -90,6 +100,7 @@ def train_epoch(
             preds = model(inputs)
 
         # Compute the loss.
+        assert 1 == 0, f"computing loss with {preds.shape}, {labels.shape}"
         loss = loss_fun(preds, labels)
 
         if cfg.MIXUP.ENABLED:
@@ -97,7 +108,6 @@ def train_epoch(
 
         # check Nan Loss.
         misc.check_nan_losses(loss)
-
 
         if cur_global_batch_size >= cfg.GLOBAL_BATCH_SIZE:
             # Perform the backward pass.
@@ -144,9 +154,7 @@ def train_epoch(
                 ]
                 # Gather all the predictions across all the devices.
                 if cfg.NUM_GPUS > 1:
-                    loss, top1_err, top5_err = du.all_reduce(
-                        [loss, top1_err, top5_err]
-                    )
+                    loss, top1_err, top5_err = du.all_reduce([loss, top1_err, top5_err])
 
                 # Copy the stats from GPU to CPU (sync point).
                 loss, top1_err, top5_err = (
@@ -290,20 +298,14 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
     # write to tensorboard format if available.
     if writer is not None:
         if cfg.DETECTION.ENABLE:
-            writer.add_scalars(
-                {"Val/mAP": val_meter.full_map}, global_step=cur_epoch
-            )
+            writer.add_scalars({"Val/mAP": val_meter.full_map}, global_step=cur_epoch)
         else:
             all_preds = [pred.clone().detach() for pred in val_meter.all_preds]
-            all_labels = [
-                label.clone().detach() for label in val_meter.all_labels
-            ]
+            all_labels = [label.clone().detach() for label in val_meter.all_labels]
             if cfg.NUM_GPUS:
                 all_preds = [pred.cpu() for pred in all_preds]
                 all_labels = [label.cpu() for label in all_labels]
-            writer.plot_eval(
-                preds=all_preds, labels=all_labels, global_step=cur_epoch
-            )
+            writer.plot_eval(preds=all_preds, labels=all_labels, global_step=cur_epoch)
 
     val_meter.reset()
 
@@ -361,9 +363,7 @@ def build_trainer(cfg):
     train_loader = loader.construct_loader(cfg, "train")
     val_loader = loader.construct_loader(cfg, "val")
 
-    precise_bn_loader = loader.construct_loader(
-        cfg, "train", is_precise_bn=True
-    )
+    precise_bn_loader = loader.construct_loader(cfg, "train", is_precise_bn=True)
     # Create meters.
     train_meter = TrainMeter(len(train_loader), cfg)
     val_meter = ValMeter(len(val_loader), cfg)
@@ -416,10 +416,10 @@ def train(cfg):
 
     # Load a checkpoint to resume training if applicable.
     if not cfg.TRAIN.FINETUNE:
-      start_epoch = cu.load_train_checkpoint(cfg, model, optimizer)
+        start_epoch = cu.load_train_checkpoint(cfg, model, optimizer)
     else:
-      start_epoch = 0
-      cu.load_checkpoint(cfg.TRAIN.CHECKPOINT_FILE_PATH, model)
+        start_epoch = 0
+        cu.load_checkpoint(cfg.TRAIN.CHECKPOINT_FILE_PATH, model)
 
     # Create the video train and val loaders.
     train_loader = loader.construct_loader(cfg, "train")
@@ -435,9 +435,7 @@ def train(cfg):
     val_meter = ValMeter(len(val_loader), cfg)
 
     # set up writer for logging to Tensorboard format.
-    if cfg.TENSORBOARD.ENABLE and du.is_master_proc(
-        cfg.NUM_GPUS * cfg.NUM_SHARDS
-    ):
+    if cfg.TENSORBOARD.ENABLE and du.is_master_proc(cfg.NUM_GPUS * cfg.NUM_SHARDS):
         writer = tb.TensorboardWriter(cfg)
     else:
         writer = None
@@ -466,17 +464,13 @@ def train(cfg):
                 else:
                     last_checkpoint = cfg.TRAIN.CHECKPOINT_FILE_PATH
                 logger.info("Load from {}".format(last_checkpoint))
-                cu.load_checkpoint(
-                    last_checkpoint, model, cfg.NUM_GPUS > 1, optimizer
-                )
+                cu.load_checkpoint(last_checkpoint, model, cfg.NUM_GPUS > 1, optimizer)
 
         # Shuffle the dataset.
         loader.shuffle_dataset(train_loader, cur_epoch)
 
         # Train for one epoch.
-        train_epoch(
-            train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer
-        )
+        train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer)
 
         is_checkp_epoch = cu.is_checkpoint_epoch(
             cfg,

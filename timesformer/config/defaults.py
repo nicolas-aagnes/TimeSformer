@@ -2,6 +2,7 @@
 
 """Configs."""
 from fvcore.common.config import CfgNode
+
 # -----------------------------------------------------------------------------
 # Config definition
 # -----------------------------------------------------------------------------
@@ -211,8 +212,20 @@ _C.MODEL.MODEL_NAME = "SlowFast"
 # The number of classes to predict for the model.
 _C.MODEL.NUM_CLASSES = 400
 
+# Dimension of hidden layer in view specific network.
+_C.MODEL.MLP_HIDDEN_DIM = 100
+
+# Output dimension of view specific network.
+_C.MODEL.MLP_OUTPUT_DIM = 128
+
+# Number of hidden layers in the view specific network.
+_C.MODEL.MLP_NUM_HIDDEN_LAYERS = 1
+
 # Loss function.
 _C.MODEL.LOSS_FUNC = "cross_entropy"
+
+# Location of cameras that were used..
+_C.MODEL.HOMOGRAPHY_MATRICES_LOCATION = ""
 
 # Model architectures that has one single pathway.
 _C.MODEL.SINGLE_PATHWAY_ARCH = ["c2d", "i3d", "slow", "x3d"]
@@ -255,8 +268,8 @@ _C.SLOWFAST.FUSION_KERNEL_SZ = 5
 
 ####### TimeSformer Options
 _C.TIMESFORMER = CfgNode()
-_C.TIMESFORMER.ATTENTION_TYPE = 'divided_space_time'
-_C.TIMESFORMER.PRETRAINED_MODEL = ''
+_C.TIMESFORMER.ATTENTION_TYPE = "divided_space_time"
+_C.TIMESFORMER.PRETRAINED_MODEL = ""
 
 ## MixUp parameters
 _C.MIXUP = CfgNode()
@@ -266,7 +279,7 @@ _C.MIXUP.CUTMIX_ALPHA = 1.0
 _C.MIXUP.CUTMIX_MINMAX = None
 _C.MIXUP.PROB = 1.0
 _C.MIXUP.SWITCH_PROB = 0.5
-_C.MIXUP.MODE = 'batch'
+_C.MIXUP.MODE = "batch"
 
 _C.EMA = CfgNode()
 _C.EMA.ENABLED = False
@@ -339,8 +352,8 @@ _C.DATA.REVERSE_INPUT_CHANNEL = False
 ############
 _C.DATA.TEMPORAL_EXTENT = 8
 _C.DATA.DEIT_TRANSFORMS = False
-_C.DATA.COLOR_JITTER = 0.
-_C.DATA.AUTO_AUGMENT = ''
+_C.DATA.COLOR_JITTER = 0.0
+_C.DATA.AUTO_AUGMENT = ""
 _C.DATA.RE_PROB = 0.0
 
 # ---------------------------------------------------------------------------- #
@@ -785,6 +798,7 @@ _C.DEMO.COMMON_CLASS_NAMES = [
 # Slow-motion rate for the visualization. The visualized portions of the
 # video will be played `_C.DEMO.SLOWMO` times slower than usual speed.
 _C.DEMO.SLOWMO = 1
+
 
 def _assert_and_infer_cfg(cfg):
     # BN assertions.

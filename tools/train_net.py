@@ -48,6 +48,100 @@ def train_epoch(
     train_meter.iter_tic()
     data_size = len(train_loader)
 
+    cur_global_batch_size = cfg.NUM_SHARDS * cfg.TRAIN.BATCH_SIZE  # == 1
+    num_iters = cfg.GLOBAL_BATCH_SIZE // cur_global_batch_size  # GLOBAL_BATCH_SIZE=64
+
+    for cur_iter, inputs in enumerate(train_loader):
+        streams, labels = inputs
+
+        # Transfer the data to the current GPU device.
+        if cfg.NUM_GPUS:
+            streams = streams.cuda()
+            labels = labels.cuda()
+
+        # Update the learning rate.
+        lr = optim.get_epoch_lr(cur_epoch + float(cur_iter) / data_size, cfg)
+        optim.set_lr(optimizer, lr)
+
+        train_meter.data_toc()
+
+        loss_fun = losses.get_loss_func(
+            cfg.MODEL.LOSS_FUNC, cfg.MODEL.get("HOMOGRAPHY_MATRICES_LOCATION"), num_cameras=cfg.DATA.NUM_CAMERAS
+        )
+
+        preds = model(streams.float())
+        loss = loss_fun(preds, labels)
+
+        # Check Nan Loss.
+        misc.check_nan_losses(loss)
+
+        # Optimizer step.
+        if cur_global_batch_size >= cfg.GLOBAL_BATCH_SIZE:
+            # Perform the backward pass.
+            optimizer.zero_grad()
+            loss.backward()
+            # Update the parameters.
+            optimizer.step()
+        else:
+            if cur_iter == 0:
+                optimizer.zero_grad()
+            loss.backward()
+            if (cur_iter + 1) % num_iters == 0:
+                optimizer.step()
+                optimizer.zero_grad()
+
+        # Update and log stats.
+        train_meter.update_stats(
+            0,
+            0,
+            loss.item(),
+            lr,
+            inputs[0].size(0)
+            * max(
+                cfg.NUM_GPUS, 1
+            ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
+        )
+        # write to tensorboard format if available.
+        if writer is not None:
+            writer.add_scalars(
+                {
+                    "Train/loss": loss,
+                    "Train/lr": lr,
+                },
+                global_step=data_size * cur_epoch + cur_iter,
+            )
+
+        train_meter.iter_toc()  # measure allreduce for this meter
+        train_meter.log_iter_stats(cur_epoch, cur_iter)
+        train_meter.iter_tic()
+
+    # Log epoch stats.
+    train_meter.log_epoch_stats(cur_epoch)
+    train_meter.reset()
+
+
+def train_epoch_kinetics(
+    train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer=None
+):
+    """
+    Perform the video training for one epoch.
+    Args:
+        train_loader (loader): video training loader.
+        model (model): the video model to train.
+        optimizer (optim): the optimizer to perform optimization on the model's
+            parameters.
+        train_meter (TrainMeter): training meters to log the training performance.
+        cur_epoch (int): current epoch of training.
+        cfg (CfgNode): configs. Details can be found in
+            slowfast/config/defaults.py
+        writer (TensorboardWriter, optional): TensorboardWriter object
+            to writer Tensorboard log.
+    """
+    # Enable train mode.
+    model.train()
+    train_meter.iter_tic()
+    data_size = len(train_loader)
+
     cur_global_batch_size = cfg.NUM_SHARDS * cfg.TRAIN.BATCH_SIZE
     num_iters = cfg.GLOBAL_BATCH_SIZE // cur_global_batch_size
 
@@ -76,9 +170,7 @@ def train_epoch(
         # Explicitly declare reduction to mean.
         # MIXUP is not enabled by default.
         if not cfg.MIXUP.ENABLED:
-            loss_fun = losses.get_loss_func(
-                cfg.MODEL.LOSS_FUNC, cfg.MODEL.get("HOMOGRAPHY_MATRICES_LOCATION", None)
-            )
+            loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
         else:
             mixup_fn = Mixup(
                 mixup_alpha=cfg.MIXUP.ALPHA,
@@ -100,7 +192,6 @@ def train_epoch(
             preds = model(inputs)
 
         # Compute the loss.
-        assert 1 == 0, f"computing loss with {preds.shape}, {labels.shape}"
         loss = loss_fun(preds, labels)
 
         if cfg.MIXUP.ENABLED:
@@ -355,7 +446,7 @@ def build_trainer(cfg):
     model = build_model(cfg)
     if du.is_master_proc() and cfg.LOG_MODEL_INFO:
         misc.log_model_info(model, cfg, use_train_input=True)
-
+    
     # Construct the optimizer.
     optimizer = optim.construct_optimizer(model, cfg)
 
@@ -410,6 +501,8 @@ def train(cfg):
     model = build_model(cfg)
     if du.is_master_proc() and cfg.LOG_MODEL_INFO:
         misc.log_model_info(model, cfg, use_train_input=True)
+    logger.info(f"Number of model parameters          : {sum(p.numel() for p in model.parameters())}")
+    logger.info(f"Number of model learnable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
     # Construct the optimizer.
     optimizer = optim.construct_optimizer(model, cfg)
@@ -422,7 +515,9 @@ def train(cfg):
         cu.load_checkpoint(cfg.TRAIN.CHECKPOINT_FILE_PATH, model)
 
     # Create the video train and val loaders.
+    logger.info("Constructing train dataloader")
     train_loader = loader.construct_loader(cfg, "train")
+    logger.info("Constructing val dataloader")
     val_loader = loader.construct_loader(cfg, "val")
 
     precise_bn_loader = (

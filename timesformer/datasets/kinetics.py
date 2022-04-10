@@ -12,6 +12,7 @@ from . import decoder as decoder
 from . import utils as utils
 from . import video_container as container
 from .build import DATASET_REGISTRY
+
 logger = logging.get_logger(__name__)
 
 
@@ -64,9 +65,7 @@ class Kinetics(torch.utils.data.Dataset):
         if self.mode in ["train", "val"]:
             self._num_clips = 1
         elif self.mode in ["test"]:
-            self._num_clips = (
-                cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS
-            )
+            self._num_clips = cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS
 
         logger.info("Constructing Kinetics {}...".format(mode))
         self._construct_loader()
@@ -78,22 +77,15 @@ class Kinetics(torch.utils.data.Dataset):
         path_to_file = os.path.join(
             self.cfg.DATA.PATH_TO_DATA_DIR, "{}.csv".format(self.mode)
         )
-        assert PathManager.exists(path_to_file), "{} dir not found".format(
-            path_to_file
-        )
+        assert PathManager.exists(path_to_file), "{} dir not found".format(path_to_file)
 
         self._path_to_videos = []
         self._labels = []
         self._spatial_temporal_idx = []
         with PathManager.open(path_to_file, "r") as f:
             for clip_idx, path_label in enumerate(f.read().splitlines()):
-                assert (
-                    len(path_label.split(self.cfg.DATA.PATH_LABEL_SEPARATOR))
-                    == 2
-                )
-                path, label = path_label.split(
-                    self.cfg.DATA.PATH_LABEL_SEPARATOR
-                )
+                assert len(path_label.split(self.cfg.DATA.PATH_LABEL_SEPARATOR)) == 2
+                path, label = path_label.split(self.cfg.DATA.PATH_LABEL_SEPARATOR)
                 for idx in range(self._num_clips):
                     self._path_to_videos.append(
                         os.path.join(self.cfg.DATA.PATH_PREFIX, path)
@@ -150,25 +142,17 @@ class Kinetics(torch.utils.data.Dataset):
                 # Decreasing the scale is equivalent to using a larger "span"
                 # in a sampling grid.
                 min_scale = int(
-                    round(
-                        float(min_scale)
-                        * crop_size
-                        / self.cfg.MULTIGRID.DEFAULT_S
-                    )
+                    round(float(min_scale) * crop_size / self.cfg.MULTIGRID.DEFAULT_S)
                 )
         elif self.mode in ["test"]:
             temporal_sample_index = (
-                self._spatial_temporal_idx[index]
-                // self.cfg.TEST.NUM_SPATIAL_CROPS
+                self._spatial_temporal_idx[index] // self.cfg.TEST.NUM_SPATIAL_CROPS
             )
             # spatial_sample_index is in [0, 1, 2]. Corresponding to left,
             # center, or right if width is larger than height, and top, middle,
             # or bottom if height is larger than width.
             spatial_sample_index = (
-                (
-                    self._spatial_temporal_idx[index]
-                    % self.cfg.TEST.NUM_SPATIAL_CROPS
-                )
+                (self._spatial_temporal_idx[index] % self.cfg.TEST.NUM_SPATIAL_CROPS)
                 if self.cfg.TEST.NUM_SPATIAL_CROPS > 1
                 else 1
             )
@@ -182,9 +166,7 @@ class Kinetics(torch.utils.data.Dataset):
             # min_scale, max_scale, and crop_size are expect to be the same.
             assert len({min_scale, max_scale}) == 1
         else:
-            raise NotImplementedError(
-                "Does not support {} mode".format(self.mode)
-            )
+            raise NotImplementedError("Does not support {} mode".format(self.mode))
         sampling_rate = utils.get_random_sampling_rate(
             self.cfg.MULTIGRID.LONG_CYCLE_SAMPLING_RATE,
             self.cfg.DATA.SAMPLING_RATE,
@@ -243,7 +225,6 @@ class Kinetics(torch.utils.data.Dataset):
                     index = random.randint(0, len(self._path_to_videos) - 1)
                 continue
 
-
             label = self._labels[index]
 
             # Perform color normalization.
@@ -264,26 +245,22 @@ class Kinetics(torch.utils.data.Dataset):
                 inverse_uniform_sampling=self.cfg.DATA.INV_UNIFORM_SAMPLE,
             )
 
-
-            if not self.cfg.MODEL.ARCH in ['vit']:
+            if not self.cfg.MODEL.ARCH in ["vit"]:
                 frames = utils.pack_pathway_output(self.cfg, frames)
             else:
                 # Perform temporal sampling from the fast pathway.
                 frames = torch.index_select(
-                     frames,
-                     1,
-                     torch.linspace(
-                         0, frames.shape[1] - 1, self.cfg.DATA.NUM_FRAMES
-
-                     ).long(),
+                    frames,
+                    1,
+                    torch.linspace(
+                        0, frames.shape[1] - 1, self.cfg.DATA.NUM_FRAMES
+                    ).long(),
                 )
 
             return frames, label, index, {}
         else:
             raise RuntimeError(
-                "Failed to fetch video after {} retries.".format(
-                    self._num_retries
-                )
+                "Failed to fetch video after {} retries.".format(self._num_retries)
             )
 
     def __len__(self):

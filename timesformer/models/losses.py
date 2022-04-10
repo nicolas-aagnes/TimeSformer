@@ -7,12 +7,15 @@ from stringprep import map_table_b3
 import torch
 import torch.nn as nn
 import numpy as np
+import copy
 
 _LOSSES = {
     "cross_entropy": nn.CrossEntropyLoss,
     "bce": nn.BCELoss,
     "bce_logit": nn.BCEWithLogitsLoss,
 }
+
+_DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cuda")
 
 _HOMOGRAPHY_MATRICES = {
     "california": {
@@ -49,30 +52,47 @@ _HOMOGRAPHY_MATRICES = {
 
 
 class HomographyLoss:
-    def __init__(self, homography_matrices_location):
-        self.m = _HOMOGRAPHY_MATRICES[homography_matrices_location]
+    def __init__(self, homography_matrices_location, num_cameras):
+        self.num_cameras = num_cameras
 
-    def __call__(self, embeddings):
-        (batch_size, num_cameras, embedding_dim) = embeddings.shape
-        assert num_cameras == 3
-        assert embedding_dim % 3 == 0, "The embedding vector is a 3d point"
+        self.m = copy.deepcopy(_HOMOGRAPHY_MATRICES[homography_matrices_location])
 
-        z_c = embeddings[:, 0]
-        z_l = embeddings[:, 1]
-        z_r = embeddings[:, 2]
+        for transf in self.m.keys():
+            self.m[transf] = (
+                torch.from_numpy(self.m[transf].copy()).to(_DEVICE).unsqueeze(0).float()
+            )
 
-        loss = (
-            torch.norm(z_c - torch.mm(z_l, self.m["left_to_center"]))
-            + torch.norm(z_l - torch.mm(z_c, self.m["center_to_left"]))
-            + torch.norm(z_c - torch.mm(z_l, self.m["left_to_center"]))
-            + torch.norm(z_c - torch.mm(z_l, self.m["left_to_center"]))
-            + torch.norm(z_c - torch.mm(z_l, self.m["left_to_center"]))
-        )
+    def __call__(self, embeddings, labels):
+        assert 1 == 0, "Working on getting labels to work in the loss function."
+        
+        (batch_size, num_cameras, embedding_dim, space_dim) = embeddings.shape
+        assert num_cameras == self.num_cameras, num_cameras
+        assert space_dim == 3, space_dim
+        
+        if self.num_cameras == 3:
+            z_c = embeddings[:, 0]
+            z_l = embeddings[:, 1]
+            z_r = embeddings[:, 2]
 
-        raise NotImplementedError
+            loss = (
+                torch.norm(z_c - torch.bmm(z_l, self.m["left_to_center"]), dim=(1, 2))
+                + torch.norm(z_l - torch.bmm(z_c, self.m["center_to_left"]), dim=(1, 2))
+                + torch.norm(z_c - torch.bmm(z_r, self.m["center_to_right"]), dim=(1, 2))
+                + torch.norm(z_r - torch.bmm(z_c, self.m["right_to_center"]), dim=(1, 2))
+            )
+        
+        elif self.num_cameras == 2:
+            z_c = embeddings[:, 0]
+            z_l = embeddings[:, 1]
+
+            loss = torch.norm(z_c - torch.bmm(z_l, self.m["left_to_center"]), dim=(1, 2))
+        else:
+            raise NotImplementedError
+
+        return loss.mean()
 
 
-def get_loss_func(loss_name, homography_matrices_location=None):
+def get_loss_func(loss_name, homography_matrices_location, num_cameras):
     """
     Retrieve the loss given the loss name.
     Args (int):
@@ -81,7 +101,7 @@ def get_loss_func(loss_name, homography_matrices_location=None):
     """
 
     if homography_matrices_location is not None:
-        _LOSSES["homography_loss"] = HomographyLoss(homography_matrices_location)
+        _LOSSES["homography_loss"] = HomographyLoss(homography_matrices_location, num_cameras)
 
     if loss_name not in _LOSSES.keys():
         raise NotImplementedError("Loss {} is not supported".format(loss_name))

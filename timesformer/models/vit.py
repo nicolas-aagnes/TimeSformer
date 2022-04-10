@@ -87,7 +87,7 @@ class Attention(nn.Module):
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
-        self.scale = qk_scale or head_dim ** -0.5
+        self.scale = qk_scale or head_dim**-0.5
         self.with_qkv = with_qkv
         if self.with_qkv:
             self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
@@ -508,6 +508,10 @@ class GeoFormer(nn.Module):
         self.cfg = cfg
 
         self.encoder = vit_base_patch16_224(cfg, **kwargs)
+
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+
         self.encoder.head = nn.Linear(
             in_features=768, out_features=cfg.MODEL.NUM_CLASSES, bias=True
         )
@@ -522,20 +526,22 @@ class GeoFormer(nn.Module):
 
         self.left_view = get_mlp()
         self.center_view = get_mlp()
-        self.right_view = get_mlp()
+
+        if self.cfg.DATA.NUM_CAMERAS == 3:
+            self.right_view = get_mlp()
 
         assert cfg.MODEL.MLP_OUTPUT_DIM % 3 == 0, "Outputs are 3D points."
 
     def forward(self, x):
-        logger.info(f"x shape: {x.shape}")
+        x = x.transpose(2, 3)
         (batch_size, num_cameras, num_channels, num_frames, width, height) = x.shape
 
         assert (
-            num_cameras == 3
+            num_cameras == self.cfg.DATA.NUM_CAMERAS
             and num_channels == 3
             and num_frames == self.cfg.DATA.NUM_FRAMES
             and width == height
-        )
+        ), x.shape
 
         x = x.view(batch_size * num_cameras, num_channels, num_frames, width, height)
         x = self.encoder(x)
@@ -543,9 +549,13 @@ class GeoFormer(nn.Module):
 
         x_left = self.left_view(x[:, 0])
         x_center = self.left_view(x[:, 1])
-        x_right = self.left_view(x[:, 2])
+        
+        if self.cfg.DATA.NUM_CAMERAS == 3:
+            x_right = self.left_view(x[:, 2])
+            x = torch.stack((x_left, x_center, x_right), dim=1)
+        else:
+            x = torch.stack((x_left, x_center), dim=1)
 
-        x = torch.stack((x_left, x_center, x_right), dim=1)
         assert x.shape == (batch_size, num_cameras, self.cfg.MODEL.MLP_OUTPUT_DIM)
 
         x = x.view(batch_size, num_cameras, self.cfg.MODEL.MLP_OUTPUT_DIM // 3, 3)

@@ -304,6 +304,9 @@ _C.DATA.CROP_SIZE = 224
 # The number of frames of the input clip.
 _C.DATA.NUM_FRAMES = 8
 
+# Number of cameras.
+_C.DATA.NUM_CAMERAS = 3
+
 # The video sampling rate of the input clip.
 _C.DATA.SAMPLING_RATE = 8
 

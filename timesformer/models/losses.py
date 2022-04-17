@@ -50,6 +50,19 @@ _HOMOGRAPHY_MATRICES = {
     }
 }
 
+# resize = (224, 224)
+# shape = cv2.imread(left_img_path).shape
+# _SCALE = np.array([[resize[0] / shape[1], 0, 0], [0, resize[1] / shape[0], 0], [0, 0, 1]])
+_SCALE = np.array( # (1216 x 1936) --> (224 x 224)
+    [
+        [0.11570248, 0, 0],
+        [0, 0.18421053, 0],
+        [0, 0, 1],
+    ]
+)
+
+_INV_SCALE = np.linalg.inv(_SCALE)
+
 
 class HomographyLoss:
     def __init__(self, homography_matrices_location, num_cameras):
@@ -75,17 +88,17 @@ class HomographyLoss:
             z_r = embeddings[:, 2]
 
             loss = (
-                torch.norm(z_c - torch.bmm(z_l, self.m["left_to_center"]), dim=(1, 2))
-                + torch.norm(z_l - torch.bmm(z_c, self.m["center_to_left"]), dim=(1, 2))
-                + torch.norm(z_c - torch.bmm(z_r, self.m["center_to_right"]), dim=(1, 2))
-                + torch.norm(z_r - torch.bmm(z_c, self.m["right_to_center"]), dim=(1, 2))
+                torch.norm(z_c - torch.bmm(z_l, _SCALE @ self.m["left_to_center"] @ _INV_SCALE), dim=(1, 2))
+                + torch.norm(z_l - torch.bmm(z_c, _SCALE @ self.m["center_to_left"] @ _INV_SCALE), dim=(1, 2))
+                + torch.norm(z_c - torch.bmm(z_r, _SCALE @ self.m["center_to_right"] @ _INV_SCALE), dim=(1, 2))
+                + torch.norm(z_r - torch.bmm(z_c, _SCALE @ self.m["right_to_center"] @ _INV_SCALE), dim=(1, 2))
             )
         
         elif self.num_cameras == 2:
             z_c = embeddings[:, 0]
             z_l = embeddings[:, 1]
 
-            loss = torch.norm(z_c - torch.bmm(z_l, self.m["left_to_center"]), dim=(1, 2))
+            loss = torch.norm(z_c - torch.bmm(z_l, _SCALE @ self.m["left_to_center"] @ _INV_SCALE), dim=(1, 2))
         else:
             raise NotImplementedError
 

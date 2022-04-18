@@ -29,3 +29,11 @@ tensorboard --logdir runs-stip/ --host 0.0.0.0
 - Freeze base encoder
 - Make view specific encoders much bigger
 - Scale to multiple GPUs
+- Increase batch size from 1
+
+## Extras
+
+To kill a running python process, insert the PID here:
+````
+python -c "import os; import signal; os.kill(<pid>, signal.SIGTERM)"
+````

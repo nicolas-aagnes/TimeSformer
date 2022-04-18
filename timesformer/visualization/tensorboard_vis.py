@@ -49,6 +49,7 @@ class TensorboardWriter(object):
         else:
             log_dir = os.path.join(cfg.OUTPUT_DIR, cfg.TENSORBOARD.LOG_DIR)
 
+        logger.info(f"Logging tensorboard values to {log_dir}")
         self.writer = SummaryWriter(log_dir=log_dir)
         logger.info(
             "To see logged results in Tensorboard, please launch using the command \

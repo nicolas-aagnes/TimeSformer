@@ -47,9 +47,11 @@ def train_epoch(
     model.train()
     train_meter.iter_tic()
     data_size = len(train_loader)
+    logger.info(f"Training dataloader is of size {data_size}.")
 
     cur_global_batch_size = cfg.NUM_SHARDS * cfg.TRAIN.BATCH_SIZE  # == 1
     num_iters = cfg.GLOBAL_BATCH_SIZE // cur_global_batch_size  # GLOBAL_BATCH_SIZE=64
+    logger.info(f"Current global batch size is {cur_global_batch_size} (num_shards={cfg.NUM_SHARDS}, train.batch_size={cfg.TRAIN.BATCH_SIZE})")
 
     for cur_iter, inputs in enumerate(train_loader):
         streams, labels = inputs
@@ -73,20 +75,23 @@ def train_epoch(
         # Check Nan Loss.
         misc.check_nan_losses(loss)
 
-        # Optimizer step.
-        if cur_global_batch_size >= cfg.GLOBAL_BATCH_SIZE:
-            # Perform the backward pass.
+        assert cur_global_batch_size < cfg.GLOBAL_BATCH_SIZE, (cur_global_batch_size, cfg.GLOBAL_BATCH_SIZE)
+        if cur_iter == 0:
             optimizer.zero_grad()
-            loss.backward()
-            # Update the parameters.
+        loss.backward()
+        if (cur_iter + 1) % num_iters == 0:
             optimizer.step()
-        else:
-            if cur_iter == 0:
-                optimizer.zero_grad()
-            loss.backward()
-            if (cur_iter + 1) % num_iters == 0:
-                optimizer.step()
-                optimizer.zero_grad()
+            optimizer.zero_grad()
+
+            # write to tensorboard format if available.
+            if writer is not None:
+                writer.add_scalars(
+                    {
+                        "Train/loss": loss,
+                        "Train/lr": lr,
+                    },
+                    global_step=data_size * cur_epoch + cur_iter,
+                )
 
         # Update and log stats.
         train_meter.update_stats(
@@ -99,15 +104,6 @@ def train_epoch(
                 cfg.NUM_GPUS, 1
             ),  # If running  on CPU (cfg.NUM_GPUS == 1), use 1 to represent 1 CPU.
         )
-        # write to tensorboard format if available.
-        if writer is not None:
-            writer.add_scalars(
-                {
-                    "Train/loss": loss,
-                    "Train/lr": lr,
-                },
-                global_step=data_size * cur_epoch + cur_iter,
-            )
 
         train_meter.iter_toc()  # measure allreduce for this meter
         train_meter.log_iter_stats(cur_epoch, cur_iter)

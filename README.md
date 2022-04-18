@@ -16,8 +16,16 @@ git push --set-upstream origin pairwise_loss
 
 ## Training
 ```
+source /mnt/disks/homography/stip_env/.venv/bin/activate
 sh scripts/gcp_stip.sh
 ```
 
+## Tensorboard
+```
+tensorboard --logdir runs-stip/ --host 0.0.0.0
+```
+
 # TODOs:
-- Setup tensorboard training for loss logging.
+- Freeze base encoder
+- Make view specific encoders much bigger
+- Scale to multiple GPUs

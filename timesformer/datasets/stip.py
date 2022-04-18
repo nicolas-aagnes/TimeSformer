@@ -89,7 +89,8 @@ class Stip(torch.utils.data.Dataset):
             data = []
 
             # Aggregates corresponding L, C, and R frame IDs into a list
-            for frame in sorted(os.listdir(self.center_img_path.format(video))):
+            l = sorted(os.listdir(self.center_img_path.format(video)))
+            for num, frame in enumerate(l):
                 f_number = int(frame.split(".")[0])
                 # Periodically readjust offsets based on timestamp_sync data
                 if (
@@ -101,8 +102,13 @@ class Stip(torch.utils.data.Dataset):
                             list(timestamps[:, 2]).index(f_number)
                         ]
                         offset = [int(L - C), int(R - C)]
-                data += [[f_number + offset[0], f_number, f_number + offset[1]]]
 
+                if num + 100 <= len(l) or\
+                (os.path.exists(self.left_img_path.format(video) + self.img_path.format(f_number + offset[0])) and\
+                os.path.exists(self.center_img_path.format(video) + self.img_path.format(f_number)) and\
+                os.path.exists(self.right_img_path.format(video) + self.img_path.format(f_number + offset[1]))):
+                    data += [[f_number + offset[0], f_number, f_number + offset[1]]]
+                
             # Samples aggregated list based on desired fps, frame count, and sample interval
             data = np.array(data)
             for i in range(

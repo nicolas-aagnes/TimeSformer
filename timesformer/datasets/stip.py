@@ -29,7 +29,7 @@ class Stip(torch.utils.data.Dataset):
         self.frame_count = cfg.DATA.NUM_FRAMES  # Number of frames per set of clips
         self.offset_update_rate = 500  # Interval at which offsets are updated
 
-        self.data_path = "/vision/u/ajarno/STIP_dataset"  # Location at which frames and timestamp data are stored
+        self.data_path = "/mnt/disks/homography/STIP_dataset"  # Location at which frames and timestamp data are stored
         self.left_img_path = self.data_path + "/{:s}/L_camera"
         self.right_img_path = self.data_path + "/{:s}/R_camera"
         self.center_img_path = self.data_path + "/{:s}/C_camera"
@@ -37,16 +37,39 @@ class Stip(torch.utils.data.Dataset):
 
         self.data = self.generate_frame_correspondences(self.fps, self.frame_count)
 
-        self.no_truck = ["0927-2017-downtown-ann-1", "0928-2017-downtown-ann-1", "0927-2017-downtown-ann-3",
-            "0927-2017-downtown-ann-2", "ANN-hanh-1", "ANN-hanh-2", "ANN-conor-2", "ANN-conor-1"]
+        self.no_truck = [
+            "0927-2017-downtown-ann-1",
+            "0928-2017-downtown-ann-1",
+            "0927-2017-downtown-ann-3",
+            "0927-2017-downtown-ann-2",
+            "ANN-hanh-1",
+            "ANN-hanh-2",
+            "ANN-conor-2",
+            "ANN-conor-1",
+        ]
 
-        self.white_truck = ["downtown-palo-alto-6", "dt-palo-alto-3", "mountain-view-2", "dt-san-jose",
-               "sf-soma-1", "dt-san-jose-2", "downtown-palo-alto-1", "mountain-view-1",
-               "sf-soma-2", "downtown-palo-alto-2", "dt-san-jose-3", "mountain-view-4",
-               "sf-financial-4", "dt-palo-alto-2", "mountain-view-3", "sf-southbound-5",
-               "dt-san-jose-4", "dt-palo-alto-1", "downtown-palo-alto-4", "downtown-palo-alto-6"]
-
-
+        self.white_truck = [
+            "downtown-palo-alto-6",
+            "dt-palo-alto-3",
+            "mountain-view-2",
+            "dt-san-jose",
+            "sf-soma-1",
+            "dt-san-jose-2",
+            "downtown-palo-alto-1",
+            "mountain-view-1",
+            "sf-soma-2",
+            "downtown-palo-alto-2",
+            "dt-san-jose-3",
+            "mountain-view-4",
+            "sf-financial-4",
+            "dt-palo-alto-2",
+            "mountain-view-3",
+            "sf-southbound-5",
+            "dt-san-jose-4",
+            "dt-palo-alto-1",
+            "downtown-palo-alto-4",
+            "downtown-palo-alto-6",
+        ]
 
     def generate_frame_correspondences(self, fps, frame_count):
         """Returns list of tuples of format (video, [[left frame IDs], [center frame IDs], [right frame IDs]])"""
@@ -102,7 +125,9 @@ class Stip(torch.utils.data.Dataset):
         elif video_name in self.white_truck:
             label_id = 1
         else:
-            raise ValueError(f"No homography matrix exists for videos in folder {video_name}.")
+            raise ValueError(
+                f"No homography matrix exists for videos in folder {video_name}."
+            )
 
         # Loads in necessary frames based on frame IDs provided by self.data
         img_paths = [
@@ -124,13 +149,15 @@ class Stip(torch.utils.data.Dataset):
         for camera in img_paths:
             frames = []
             for path in camera:
-                img = np.asarray(Image.open(path).convert("RGB").resize((224, 224)))
+                img = Image.open(path).convert("RGB")
+                assert img.size == (1936, 1216), img.size
+                img = np.asarray(img.resize((224, 224)))
                 img = img.transpose((2, 0, 1))
                 frames += [img]
             cameras += [frames]
-        
+
         cameras = np.array(cameras)
-        
+
         if self.cfg.DATA.NUM_CAMERAS == 2:
             cameras = cameras[:2]
 

@@ -224,9 +224,6 @@ _C.MODEL.MLP_NUM_HIDDEN_LAYERS = 1
 # Loss function.
 _C.MODEL.LOSS_FUNC = "cross_entropy"
 
-# Location of cameras that were used..
-_C.MODEL.HOMOGRAPHY_MATRICES_LOCATION = ""
-
 # Model architectures that has one single pathway.
 _C.MODEL.SINGLE_PATHWAY_ARCH = ["c2d", "i3d", "slow", "x3d"]
 

@@ -56,8 +56,8 @@ def train_epoch(
 
         # Transfer the data to the current GPU device.
         if cfg.NUM_GPUS:
-            streams = streams.cuda()
-            labels = labels.cuda()
+            streams = streams.cuda(non_blocking=True)
+            labels = labels.cuda(non_blocking=True)
 
         # Update the learning rate.
         lr = optim.get_epoch_lr(cur_epoch + float(cur_iter) / data_size, cfg)
@@ -65,9 +65,7 @@ def train_epoch(
 
         train_meter.data_toc()
 
-        loss_fun = losses.get_loss_func(
-            cfg.MODEL.LOSS_FUNC, cfg.MODEL.get("HOMOGRAPHY_MATRICES_LOCATION"), num_cameras=cfg.DATA.NUM_CAMERAS
-        )
+        loss_fun = losses.get_loss_func(num_cameras=cfg.DATA.NUM_CAMERAS)
 
         preds = model(streams.float())
         loss = loss_fun(preds, labels)
@@ -446,7 +444,7 @@ def build_trainer(cfg):
     model = build_model(cfg)
     if du.is_master_proc() and cfg.LOG_MODEL_INFO:
         misc.log_model_info(model, cfg, use_train_input=True)
-    
+
     # Construct the optimizer.
     optimizer = optim.construct_optimizer(model, cfg)
 
@@ -501,8 +499,12 @@ def train(cfg):
     model = build_model(cfg)
     if du.is_master_proc() and cfg.LOG_MODEL_INFO:
         misc.log_model_info(model, cfg, use_train_input=True)
-    logger.info(f"Number of model parameters          : {sum(p.numel() for p in model.parameters())}")
-    logger.info(f"Number of model learnable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+    logger.info(
+        f"Number of model parameters          : {sum(p.numel() for p in model.parameters())}"
+    )
+    logger.info(
+        f"Number of model learnable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}"
+    )
 
     # Construct the optimizer.
     optimizer = optim.construct_optimizer(model, cfg)

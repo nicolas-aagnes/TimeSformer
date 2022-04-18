@@ -524,11 +524,11 @@ class GeoFormer(nn.Module):
                 num_hidden_layers=cfg.MODEL.MLP_NUM_HIDDEN_LAYERS,
             )
 
-        self.left_view = get_mlp()
-        self.center_view = get_mlp()
+        self.left_net = get_mlp()
+        self.center_net = get_mlp()
 
         if self.cfg.DATA.NUM_CAMERAS == 3:
-            self.right_view = get_mlp()
+            self.right_net = get_mlp()
 
         assert cfg.MODEL.MLP_OUTPUT_DIM % 3 == 0, "Outputs are 3D points."
 
@@ -547,11 +547,11 @@ class GeoFormer(nn.Module):
         x = self.encoder(x)
         x = x.view(batch_size, num_cameras, self.cfg.MODEL.NUM_CLASSES)
 
-        x_left = self.left_view(x[:, 0])
-        x_center = self.left_view(x[:, 1])
+        x_left = self.left_net(x[:, 0])
+        x_center = self.center_net(x[:, 1])
         
         if self.cfg.DATA.NUM_CAMERAS == 3:
-            x_right = self.left_view(x[:, 2])
+            x_right = self.right_net(x[:, 2])
             x = torch.stack((x_left, x_center, x_right), dim=1)
         else:
             x = torch.stack((x_left, x_center), dim=1)

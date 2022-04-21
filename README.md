@@ -17,7 +17,7 @@ git push --set-upstream origin pairwise_loss
 ## Training
 ```
 source /mnt/disks/homography/stip_env/.venv/bin/activate
-sh scripts/gcp_stip.sh
+sh scripts/gcp_train.sh
 ```
 
 ## Tensorboard

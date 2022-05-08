@@ -25,7 +25,7 @@ MODEL:
   DROPOUT_RATE: 0.5
 TIMESFORMER:
   ATTENTION_TYPE: 'divided_space_time'
-  PRETRAINED_MODEL: /home/nico/TimeSformer/TimeSformer_divST_8x32_224_K600.pyth
+  PRETRAINED_MODEL: /mnt/disks/homography/stip_env/TimeSformer_divST_8x32_224_K600.pyth
 SOLVER:
   BASE_LR: 0.000000001
   LR_POLICY: steps_with_relative_lrs

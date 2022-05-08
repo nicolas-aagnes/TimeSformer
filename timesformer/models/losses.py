@@ -95,6 +95,7 @@ _INV_SCALE = np.linalg.inv(_SCALE)
 _SCALE = torch.from_numpy(_SCALE).to(_DEVICE).float()
 _INV_SCALE = torch.from_numpy(_INV_SCALE).to(_DEVICE).float()
 
+
 class HomographyLoss:
     def __init__(self, num_cameras):
         self.num_cameras = num_cameras
@@ -104,12 +105,16 @@ class HomographyLoss:
 
         for transf in self.homography_no_truck.keys():
             self.homography_no_truck[transf] = (
-                torch.from_numpy(self.homography_no_truck[transf].copy()).to(_DEVICE).unsqueeze(0).float()
+                torch.from_numpy(self.homography_no_truck[transf].copy())
+                .to(_DEVICE)
+                .float()
             )
-        
+
         for transf in self.homography_white_truck.keys():
             self.homography_white_truck[transf] = (
-                torch.from_numpy(self.homography_white_truck[transf].copy()).to(_DEVICE).unsqueeze(0).float()
+                torch.from_numpy(self.homography_white_truck[transf].copy())
+                .to(_DEVICE)
+                .float()
             )
 
     def __call__(self, embeddings, labels):
@@ -119,34 +124,43 @@ class HomographyLoss:
         assert num_cameras == self.num_cameras, num_cameras
         assert space_dim == 3, space_dim
 
-        assert batch_size == 1 and labels.shape == (1, ), f"Only labels of batch size 1 have been developed, got batch size {batch_size} and labels {labels.shape}"
+        scale = _SCALE.to(embeddings.device)
+        inv_scale = _INV_SCALE.to(embeddings.device)
 
-        m = self.homography_no_truck if labels.item() == 0 else self.homography_white_truck
+        # assert batch_size == 1 and labels.shape == (1, ), f"Only labels of batch size 1 have been developed, got batch size {batch_size} and labels {labels.shape}"
+        m = (
+            self.homography_no_truck
+            if labels.item() == 0
+            else self.homography_white_truck
+        )
+        # labels[0].item()
+        # m = self.homography_no_truck["left_to_center"].to(embeddings.device)
+        # print(labels)
+        # m = m["left_to_center"].to(embeddings.device)
+
+        losses = {}
 
         if self.num_cameras == 3:
+            raise NotImplementedError()
             z_c = embeddings[:, 0]
             z_l = embeddings[:, 1]
             z_r = embeddings[:, 2]
 
             loss = (
                 torch.norm(
-                    z_c
-                    - torch.bmm(z_l, _SCALE @ m["left_to_center"] @ _INV_SCALE),
+                    z_c - torch.bmm(z_l, _SCALE @ m["left_to_center"] @ _INV_SCALE),
                     dim=(1, 2),
                 )
                 + torch.norm(
-                    z_l
-                    - torch.bmm(z_c, _SCALE @ m["center_to_left"] @ _INV_SCALE),
+                    z_l - torch.bmm(z_c, _SCALE @ m["center_to_left"] @ _INV_SCALE),
                     dim=(1, 2),
                 )
                 + torch.norm(
-                    z_c
-                    - torch.bmm(z_r, _SCALE @ m["center_to_right"] @ _INV_SCALE),
+                    z_c - torch.bmm(z_r, _SCALE @ m["center_to_right"] @ _INV_SCALE),
                     dim=(1, 2),
                 )
                 + torch.norm(
-                    z_r
-                    - torch.bmm(z_c, _SCALE @ m["right_to_center"] @ _INV_SCALE),
+                    z_r - torch.bmm(z_c, _SCALE @ m["right_to_center"] @ _INV_SCALE),
                     dim=(1, 2),
                 )
             )
@@ -155,14 +169,27 @@ class HomographyLoss:
             z_c = embeddings[:, 0]
             z_l = embeddings[:, 1]
 
-            loss = torch.norm(
-                z_c - torch.bmm(z_l, _SCALE @ m["left_to_center"] @ _INV_SCALE),
+            losses["Loss/left_to_center"] = torch.norm(
+                z_c
+                - torch.bmm(
+                    z_l,
+                    (scale @ m["left_to_center"] @ inv_scale).expand(batch_size, 3, 3),
+                ),
                 dim=(1, 2),
             )
+            losses["Loss/center_to_left"] = torch.norm(
+                z_l
+                - torch.bmm(
+                    z_c,
+                    (scale @ m["center_to_left"] @ inv_scale).expand(batch_size, 3, 3),
+                ),
+                dim=(1, 2),
+            )
+            # loss = (loss1 + loss2) / 2
         else:
             raise NotImplementedError
 
-        return loss.mean()
+        return losses
 
 
 def get_loss_func(num_cameras):

@@ -23,7 +23,36 @@ from timesformer.utils.multigrid import MultigridSchedule
 from timm.data import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 
+import io
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
+
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.figure import Figure
+
 logger = logging.get_logger(__name__)
+
+
+def generate_plot(embeddings):
+    x = embeddings[:, 0]
+    y = embeddings[:, 1]
+
+    fig = Figure()
+    canvas = FigureCanvas(fig)
+    ax = fig.gca()
+
+    ax.scatter(embeddings[0::2, 0], embeddings[0::2, 1], c="r")
+    ax.scatter(embeddings[1::2, 0], embeddings[1::2, 1], c="b")
+    # ax.axis("off")
+    ax.grid(True)
+
+    canvas.draw()  # draw the canvas, cache the renderer
+
+    image = np.frombuffer(canvas.tostring_rgb(), dtype="uint8")
+    fig_shape = fig.canvas.get_width_height()[::-1] + (3,)
+    image = image.reshape(fig_shape)
+
+    return image.transpose((2, 0, 1))
 
 
 def train_epoch(
@@ -51,7 +80,12 @@ def train_epoch(
 
     cur_global_batch_size = cfg.NUM_SHARDS * cfg.TRAIN.BATCH_SIZE  # == 1
     num_iters = cfg.GLOBAL_BATCH_SIZE // cur_global_batch_size  # GLOBAL_BATCH_SIZE=64
-    logger.info(f"Current global batch size is {cur_global_batch_size} (num_shards={cfg.NUM_SHARDS}, train.batch_size={cfg.TRAIN.BATCH_SIZE})")
+    logger.info(
+        f"Current global batch size is {cur_global_batch_size} (num_shards={cfg.NUM_SHARDS}, train.batch_size={cfg.TRAIN.BATCH_SIZE})"
+    )
+
+    tsne = TSNE(n_components=2, learning_rate="auto", init="random")
+    preds_batch = np.empty(shape=(0, 120))
 
     for cur_iter, inputs in enumerate(train_loader):
         streams, labels = inputs
@@ -70,12 +104,25 @@ def train_epoch(
         loss_fun = losses.get_loss_func(num_cameras=cfg.DATA.NUM_CAMERAS)
 
         preds = model(streams.float())
-        loss = loss_fun(preds, labels)
+        loss_terms = loss_fun(preds, labels)
+        loss = sum(loss_term for loss_term in loss_terms.values()) / len(loss_terms)
+
+        # Store embeddings for tsne analysis.
+        assert preds.shape[0] == 1, preds.shape
+        preds_batch = np.vstack(
+            (preds_batch, preds[0].view(2, -1).detach().cpu().numpy())
+        )
+        # tsne.fit_transform(preds[0].view(2, -1).detach().cpu().numpy())
+        # tsne_embeddings = np.vstack((tsne_embeddings, tsne_preds))
+        # print(f"tsne embeddings shape {tsne_embeddings.shape}")
 
         # Check Nan Loss.
         misc.check_nan_losses(loss)
 
-        assert cur_global_batch_size < cfg.GLOBAL_BATCH_SIZE, (cur_global_batch_size, cfg.GLOBAL_BATCH_SIZE)
+        assert cur_global_batch_size < cfg.GLOBAL_BATCH_SIZE, (
+            cur_global_batch_size,
+            cfg.GLOBAL_BATCH_SIZE,
+        )
         if cur_iter == 0:
             optimizer.zero_grad()
         loss.backward()
@@ -85,12 +132,17 @@ def train_epoch(
 
             # write to tensorboard format if available.
             if writer is not None:
+                global_step = data_size * cur_epoch + cur_iter
+
+                if (cur_iter + 1) % (num_iters * 3) == 0:
+                    tsne_embeddings = tsne.fit_transform(preds_batch)
+                    tsne_plot = generate_plot(tsne_embeddings)
+                    writer.writer.add_image("tsne", tsne_plot, global_step)
+                    preds_batch = np.empty(shape=(0, 120))
+
                 writer.add_scalars(
-                    {
-                        "Train/loss": loss,
-                        "Train/lr": lr,
-                    },
-                    global_step=data_size * cur_epoch + cur_iter,
+                    {k: v.item() for k, v in loss_terms.items()},
+                    global_step=global_step,
                 )
 
         # Update and log stats.
